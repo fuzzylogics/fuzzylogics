@@ -1,6 +1,7 @@
 from re import I
 import numpy as np
 from numpy.core.fromnumeric import compress
+from six import b
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -266,15 +267,24 @@ class CNN_GGA_4(nn.Module):
 
 
 class CNN_GGA_5(nn.Module):
-    def __init__(self, icpt_channels=4, compress_channels=16, bias=True, act=None):
+    def __init__(self, bias=True, act=None):
         super().__init__()
-        self.icpt_block1 = icpt_block_CNN_GGA_5(4, icpt_channels, bias=bias)
-        before_compress_channels = self.icpt_block1.out_channels
-        self.compress_block = cmps_block_CNN_GGA_5(before_compress_channels, compress_channels, pool_size=2, bias=bias)
-        self.fc_block = fc_block_CNN_GGA_5(compress_channels*5*5*5, bias=bias, act=act)
+        self.icpt_block1 = icpt_block_CNN_GGA_5(4, icpt_channels=4, bias=bias)
+        self.pool1 = nn.MaxPool3d(kernel_size=3, stride=2, padding=0)
+        self.compress_block1 = nn.Conv3d(self.icpt_block1.out_channels, out_channels=16, 
+                                        kernel_size=1, bias=bias)
+        self.icpt_block2 = icpt_block_CNN_GGA_5(16, icpt_channels=16, bias=bias)
+        self.pool2 = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)
+        self.compress_block2 = nn.Conv3d(self.icpt_block2.out_channels, out_channels=64, 
+                                        kernel_size=1, bias=bias)  
+        self.fc_block = fc_block_CNN_GGA_5(64*2**3, bias=bias, activation='sig')
     def forward(self, x):
         x = self.icpt_block1(x)
-        x = self.compress_block(x)
+        x = self.pool1(x)
+        x = self.compress_block1(x)
+        x = self.icpt_block2(x)
+        x = self.pool2(x)
+        x = self.compress_block2(x)       
         x = x.view(-1, self.n(x))
         x = self.fc_block(x)
         return x
@@ -284,18 +294,6 @@ class CNN_GGA_5(nn.Module):
         for s in size:
             num_features *= s
         return num_features
-
-# class conv_block_CNN_GGA_5(nn.Module):
-#     def __init__(self, out_channels=256, bias=True):
-#         super().__init__()
-#         self.conv1 = nn.Conv3d(4, 32, 3, bias=bias)
-#         self.conv2 = nn.Conv3d(32, 32, 1, bias=bias)
-#         self.conv3 = nn.Conv3d(32, out_channels, 3, bias=bias)
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         x = self.conv2(x)
-#         x = self.conv3(x)
-#         return x
 
 class icpt_block_CNN_GGA_5(nn.Module):
     def __init__(self, in_channels=256, icpt_channels=36, bias=True):
@@ -314,36 +312,41 @@ class icpt_block_CNN_GGA_5(nn.Module):
         y += [self.conv_3(x)]
         y += [self.conv_5(x)]
         y += [self.conv_x(x)]
-        y += [self.conv_x(x)]
         y += [self.conv_y(x)]
         y += [self.conv_z(x)]
         y += [self.pool(x)]
         return torch.cat(y, 1)
 
-class cmps_block_CNN_GGA_5(nn.Module):
-    def __init__(self, in_channels, compress_channels, pool_size=2, bias=True, act=None):
-        if pool_size > 1: self.pool = nn.AvgPool3d(kernel_size=pool_size, stride=pool_size)
-        self.conv = nn.Conv3d(in_channels=in_channels, out_channels=compress_channels, kernel_size=1)
-    def forward(self, x):
-        if getattr(self, 'pool', None) is not None: x = self.pool(x)
-        x = self.conv(x)
-        return x
-
 class fc_block_CNN_GGA_5(nn.Module):
-    def __init__(self, in_channels, bias=True, act=None):
+    def __init__(self, in_channels, bias=True, activation='sig'):
         super().__init__()
         # self.fc1 = nn.Linear(in_channels, 512, bias=bias)
         self.fc1 = nn.Linear(in_channels, 128, bias=bias)
         self.fc2 = nn.Linear(128, 32, bias=bias)
         self.fc3 = nn.Linear(32, 4, bias=bias)
         self.fc4 = nn.Linear(4, 1, bias=bias)
-        self.act = F.elu if act==None else act
+        self.activation_shift = 0.0
+        if activation == 'sig': 
+            self.activation = Sigmoid()
+            self.activation_shift = -0.5
+        elif activation == 'elu':
+            self.activation = ELU()
+        else: raise NotImplementedError
     def forward(self, x):
-        x = self.act(self.fc1(x))
-        x = self.act(self.fc2(x))
-        x = self.act(self.fc3(x))
+        x = self.activation(self.fc1(x)) + self.activation_shift
+        x = self.activation(self.fc2(x)) + self.activation_shift
+        x = self.activation(self.fc3(x)) + self.activation_shift
         x = self.fc4(x)
         return x
+
+# class cmps_block_CNN_GGA_5(nn.Module):
+#     def __init__(self, in_channels, compress_channels, pool_size=2, bias=True, act=None):
+#         if pool_size > 1: self.pool = nn.AvgPool3d(kernel_size=pool_size, stride=pool_size)
+#         self.conv = nn.Conv3d(in_channels=in_channels, out_channels=compress_channels, kernel_size=1)
+#     def forward(self, x):
+#         if getattr(self, 'pool', None) is not None: x = self.pool(x)
+#         x = self.conv(x)
+#         return x
 
 
 class CNN_GGA_all_sym_2(nn.Module):
