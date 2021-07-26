@@ -1,0 +1,53 @@
+---
+molecules:
+  struc_from: function
+  struc_func: simple_water_set
+  dimer_range:
+    atoms: ['H', 'H']
+    dists: null
+    n_struc: 3
+    bg_dist: 0.3
+    ed_dist: 0.9
+  struc_files:
+    struc_path: "./data/molecules"
+    filter_name_contain: "HH"
+  grids:
+    grid_level: 3
+
+data:
+  -
+  load_path: './data_rho/data.pkl'
+
+train:
+  model:
+    name: CNN_GGA_1
+  restart_from: null
+  max_itr: 100
+  max_iks: 1
+  itr_save_every: 1
+  iks_save_every: 1
+  optimizer:
+    name: Adam
+  loss_function: mse
+
+sampling:
+  nb_opts:
+    shape: 'cube'
+    n_points: 9
+    cube_length: 0.9
+    transform:
+      apply:
+        -
+        # - mirror
+        # - rotation
+      mirror:
+        axes: 'all'
+        keep_original: true
+      rotation:
+        random_repeat: 1
+        #random_nAxis_nRepeat: [3, 5]
+        keep_original: true
+
+oep:                                                                                              
+  conv_crit: 1.0e-10
+  max_itr: 1000
