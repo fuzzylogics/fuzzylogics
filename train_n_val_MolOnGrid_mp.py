@@ -1,4 +1,5 @@
 from re import X
+from time import time
 from options import gen_val_opts, read_options_yaml, print_options_yaml, define_train, define_optimizer, compare_opts
 from IO import save_check, load_check
 from molecule import Molecule
@@ -89,7 +90,7 @@ def training_n_validation_process(rank, world_size,
     guide_multiplier[:] = 1.0
 
     for itr in range(ini_itr, ini_itr+max_itr):
-        
+        t0 = time()
         # training
         tr_sampler.set_epoch(itr)  # sampler reset seed
         model.train()
@@ -117,12 +118,12 @@ def training_n_validation_process(rank, world_size,
 
                 # structures in the batch
                 for i_struc_in_batch, mol in enumerate(mol_batch):
-
+                    
                     # indices
                     i_struc = data_indces[i_struc_in_batch]
                     grid_range = range(grid_bg, grid_bg + grid_sizes[i_struc_in_batch])                    
                     if model_use_edge: edge_range = range(edge_bg, edge_bg + edge_sizes[i_struc_in_batch])
-                    
+
                     # output
                     y = y_batch[grid_range].mean(1)
                    
@@ -185,8 +186,8 @@ def training_n_validation_process(rank, world_size,
                         reg_loss += curve_reg_020
                         print('i,', i_struc, 'reg_loss after 020 = ', reg_loss.item())
                         print('i,', i_struc, 'raw_loss = ', raw_loss.item())
-                    loss_ratio = reg_loss.item() / raw_loss.item()
-                    print('i,', i_struc, 'loss_ratio, ', loss_ratio)
+                    # loss_ratio = reg_loss.item() / raw_loss.item()
+                    # print('i,', i_struc, 'loss_ratio, ', loss_ratio)
                    
                     # # scale losses
                     # if raw_loss.item() < 1.0:
@@ -263,10 +264,10 @@ def training_n_validation_process(rank, world_size,
                     mean_rho_diff, max_rho_diff = rho_diff.abs().mean().item(), rho_diff.abs().max().item()
                     val_err[0, itr-ini_itr, 0, i_struc], val_err[1, itr-ini_itr, 0, i_struc] = mean_rho_diff, max_rho_diff
                     print("eval itr %d, istruc %d,\tmean_rho_diff = %10f\tmax_rho_diff = %10f" \
-                          %(itr, i_struc, mean_rho_diff, max_rho_diff))                    
+                          %(itr+1, i_struc, mean_rho_diff, max_rho_diff)) # eval itr is 1 ahead of tr itr                   
                     err_I = eval_I(rho_new, rho_target, mol.grid.weights)
                     val_err[2, itr-ini_itr, 0, i_struc] = err_I
-                    print("eval itr %d, errorItg = %10.8e"%(itr, err_I))                   
+                    print("eval itr %d, errorItg = %10.8e"%(itr+1, err_I))                   
 
                     # save
                     if itr % itr_save_val == 0:
@@ -283,8 +284,8 @@ def training_n_validation_process(rank, world_size,
 
         # save check
         if rank == 0 and (itr % itr_save_check == 0 or itr == ini_itr+max_itr-1):
-            print('Saving ckeck at itr=%d...'%(itr), end='')
-            save_check('./checkpoints', itr, model, optimizer, batch_loss)
+            print('Saving ckeck at itr=%d...'%(itr+1), end='')
+            save_check('./checkpoints', itr+1, model, optimizer, batch_loss)
             # with open(osp.join(val_res_dir, 'rho_diff_val.pkl'), 'ab') as f_rho:
             #     pickle.dump(rho_diff_all_val, f_rho)
             # with open(osp.join(val_res_dir, 'vxc_val.pkl'), 'ab') as f_v:
@@ -294,6 +295,9 @@ def training_n_validation_process(rank, world_size,
             np.save('tr_err_log.npy', tr_err_filled)
             np.save('val_err_log.npy', val_err_filled)
             print('Done.')
+        if rank == 0:
+            t1 = time()
+            print("Time for iteration %d is %fs."%(itr+1, t1-t0))
 
     # done
     shm_tr_err.close()
